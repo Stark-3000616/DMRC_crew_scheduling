@@ -1,0 +1,11 @@
+Serial,Rake Num,Start Station,Start Time,End Station,End Time,Direction,service time,Category,Step Back Rake,Step Back Location
+101,501,MKPD,06:00,PVGW DN,06:35,DN,35,inducting,No StepBack,No StepBack
+102,501,PVGW DN,06:40,KKDA DN,07:10,DN,30,inducting,No StepBack,No StepBack
+103,502,KKDA DN,07:50,MKPD,08:25,UP,35,inducting,No StepBack,No StepBack
+104,503,MKPD,08:30,PVGW DN,09:05,DN,35,inducting,No StepBack,No StepBack
+105,502,PVGW DN,09:35,KKDA DN,10:05,DN,30,inducting,No StepBack,No StepBack
+106,503,KKDA DN,10:45,MKPD,11:20,UP,35,inducting,No StepBack,No StepBack
+107,504,MKPD,11:30,PVGW DN,12:05,DN,35,inducting,No StepBack,No StepBack
+108,504,PVGW DN,12:10,KKDA DN,12:40,DN,30,inducting,No StepBack,No StepBack
+109,505,KKDA DN,13:10,MKPD,13:45,UP,35,inducting,No StepBack,No StepBack
+110,506,MKPD,14:00,PVGW DN,14:35,DN,35,inducting,No StepBack,No StepBack
