@@ -329,7 +329,7 @@ def solve_RMLP(services, duties, threshold=0):
     for service_idx, service in enumerate(services):
         constr = model.addConstr(
             gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) >= 1,
-            name=f"Service_{service.serv_num}")
+            name=f"service_{service.serv_num}")
         service_constraints.append(constr)
 
     model.optimize()
@@ -343,7 +343,7 @@ def solve_RMLP(services, duties, threshold=0):
         
         # Get the dual variables for each service constraint
         # dual_values = [constr.Pi for constr in service_constraints] 
-        dual_values = {f"Service_{service.serv_num}": constr.Pi for service, constr in zip(services, service_constraints)}
+        dual_values = {f"service_{service.serv_num}": constr.Pi for service, constr in zip(services, service_constraints)}
 
         selected_duties_vars = [v.varName for v in model.getVars() if v.x > threshold]
         selected_duties = [v for v in model.getVars() if v.x > threshold]
@@ -383,6 +383,238 @@ def new_duty_with_bellman_ford(graph, dual_values):
     length = nx.bellman_ford_path_length(graph_copy, -2, -1, weight='weight')
 
     return path, length, graph_copy
+
+# /////////////////////////// 2nd approach -a resource‐constrained shortest path (RCSP) algorithm. //////////////////////////////
+
+# def new_duty_with_RCSP(graph, dual_values, service_dict, max_resource):
+#     """
+#     Finds a new duty (path from -2 to -1) using a Resource-Constrained Shortest Path algorithm.
+    
+#     Parameters:
+#       graph         - The directed graph (NetworkX DiGraph) of services (nodes) with start (-2) and sink (-1).
+#       dual_values   - A dictionary of dual values, e.g. { "service_123": value, ... }.
+#       service_dict  - A dictionary mapping service number to Service objects (providing serv_dur).
+#       max_resource  - The maximum allowed resource consumption (e.g., maximum duty duration in minutes).
+      
+#     Returns:
+#       best_path     - The list of nodes representing the new duty (including -2 at start and -1 at end).
+#       best_cost     - The associated cost (reduced cost) of that path.
+#       labels        - The complete dictionary of labels (for debugging purposes).
+#     """
+#     # Each label is a tuple: (current_node, total_cost, total_resource, path)
+#     # Initialize labels at the source node (-2)
+#     labels = { -2: [(-2, 0, 0, [-2])] }
+    
+#     # Use a simple queue to process nodes (could be improved with a priority queue)
+#     queue = [-2]
+    
+#     while queue:
+#         u = queue.pop(0)
+#         for label in labels[u]:
+#             current_node, current_cost, current_resource, current_path = label
+            
+#             # For each successor of u
+#             for v in graph.successors(u):
+#                 # If v is a service (not source or sink), add its duration
+#                 additional_resource = 0
+#                 if v not in [-2, -1]:
+#                     additional_resource = service_dict[v].serv_dur
+#                 new_resource = current_resource + additional_resource
+#                 # Skip this extension if resource limit is exceeded
+#                 if new_resource > max_resource:
+#                     continue
+
+#                 # Define the additional cost.
+#                 # if u is not the source, you might set:
+#                 additional_cost = 0
+#                 if u != -2:
+#                     # Use the dual value for service u
+#                     additional_cost = -dual_values.get(f"service_{u}", 0)
+#                 new_cost = current_cost + additional_cost
+#                 new_path = current_path + [v]
+#                 new_label = (v, new_cost, new_resource, new_path)
+                
+#                 # Dominance check: prune labels at node v.
+#                 dominated = False
+#                 non_dominated = []
+#                 for existing in labels.get(v, []):
+#                     # If existing label is as good or better in both cost and resource, discard new label.
+#                     if existing[1] <= new_cost and existing[2] <= new_resource:
+#                         dominated = True
+#                         break
+#                     # If new_label dominates existing, we skip keeping the existing label.
+#                     if new_cost <= existing[1] and new_resource <= existing[2]:
+#                         continue
+#                     non_dominated.append(existing)
+#                 if dominated:
+#                     continue
+#                 # Update label list at v
+#                 updated_labels = non_dominated + [new_label]
+#                 labels[v] = updated_labels
+#                 if v not in queue:
+#                     queue.append(v)
+    
+#     # Check if any labels reached the sink (-1)
+#     if -1 in labels:
+#         # Select the label with the smallest cost at the sink
+#         best_label = min(labels[-1], key=lambda x: x[1])
+#         best_path = best_label[3]
+#         best_cost = best_label[1]
+#         return best_path, best_cost, labels
+#     else:
+#         # No feasible path found under the resource constraint
+#         return None, None, labels
+
+
+def new_duty_with_RCSP(graph, dual_values, service_dict, max_resource):
+    """
+    Finds a new duty (path from -2 to -1) using an RCSP algorithm.
+    
+    Parameters:
+      graph         - The directed graph (NetworkX DiGraph).
+      dual_values   - Dictionary with dual values (e.g., {"service_1": value, ...}).
+      service_dict  - Dictionary mapping service number to Service objects.
+      max_resource  - Maximum allowed resource (e.g., maximum duty duration in minutes).
+      
+    Returns:
+      best_path     - The path (list of nodes) for the new duty.
+      best_cost     - The associated reduced cost.
+      labels        - Dictionary of labels at each node.
+    """
+    # Initialize label at source (-2)
+    labels = {-2: [(-2, 0, 0, [-2])]}  # (current_node, cost, resource, path)
+    queue = [-2]
+    
+    while queue:
+        u = queue.pop(0)
+        for label in labels[u]:
+            current_node, current_cost, current_resource, current_path = label
+            for v in graph.successors(u):
+                # Calculate the transition time from u to v:
+                transition_time = 0
+                if u not in [-2, -1] and v not in [-2, -1]:
+                    # Ensure service u has an end time and service v has a start time.
+                    transition_time = max(0, service_dict[v].start_time - service_dict[u].end_time)
+                # Otherwise, for edges involving source/sink, you may define transition_time as 0.
+                
+                # Calculate the new service duration at v (if v is a service)
+                additional_duration = service_dict[v].serv_dur if v not in [-2, -1] else 0
+                
+                # new_resource = current_resource + transition_time + additional_duration
+                new_resource = current_resource + additional_duration
+                # If new resource exceeds limit, skip
+                if new_resource > max_resource:
+                    continue
+                
+                # Update cost; here we subtract the dual value for node u if applicable.
+                additional_cost = -dual_values.get(f"service_{u}", 0) if u not in [-2] else 0
+                new_cost = current_cost + additional_cost
+                new_path = current_path + [v]
+                new_label = (v, new_cost, new_resource, new_path)
+                
+                # Dominance check at node v
+                dominated = False
+                non_dominated = []
+                for existing in labels.get(v, []):
+                    if existing[1] <= new_cost and existing[2] <= new_resource:
+                        dominated = True
+                        break
+                    if not (new_cost <= existing[1] and new_resource <= existing[2]):
+                        non_dominated.append(existing)
+                if dominated:
+                    continue
+                labels[v] = non_dominated + [new_label]
+                if v not in queue:
+                    queue.append(v)
+                    
+    if -1 in labels:
+        best_label = min(labels[-1], key=lambda x: x[1])
+        return best_label[3], best_label[1], labels
+    else:
+        return None, None, labels
+
+
+# ///////////////////////////////////////////////////////////////////////////////////////////////
+# ///////////////////////////////////////priority queue approach////////////////////////////////////////////
+import heapq
+
+def new_duty_with_RCSP_priority(graph, dual_values, service_dict, max_resource):
+    """
+    Finds a new duty (path from source -2 to sink -1) using a Resource-Constrained
+    Shortest Path (RCSP) algorithm with a priority queue. Uses a simplified label tuple:
+    (cost, current_node, resource, path).
+
+    Parameters:
+      graph         - NetworkX DiGraph.
+      dual_values   - Dictionary of dual values (e.g., {"service_1": value, ...}).
+      service_dict  - Dictionary mapping service numbers to Service objects.
+      max_resource  - Maximum allowed resource (e.g., maximum duty duration in minutes).
+
+    Returns:
+      best_path     - The best path (list of nodes) from source (-2) to sink (-1).
+      best_cost     - The associated cost (reduced cost) of that path.
+      labels        - Dictionary of labels at each node (for debugging).
+    """
+    # Initialize labels dictionary with the source node (-2)
+    labels = { -2: [(0, -2, 0, [-2])] }  # (cost, node, resource, path)
+    
+    # Initialize the priority queue with the source label.
+    heap = [(0, -2, 0, [-2])]  # (cost, node, resource, path)
+
+    while heap:
+        cost, u, current_resource, current_path = heapq.heappop(heap)
+
+        # For each successor of u, try to extend the label.
+        for v in graph.successors(u):
+            # Calculate transition time between service u and v (if both are actual services).
+            transition_time = 0
+            if u not in [-2, -1] and v not in [-2, -1]:
+                transition_time = max(0, service_dict[v].start_time - service_dict[u].end_time)
+            
+            # Additional resource consumption is the service duration at v (if applicable).
+            additional_duration = service_dict[v].serv_dur if v not in [-2, -1] else 0
+            
+            new_resource = current_resource + transition_time + additional_duration
+            if new_resource > max_resource:
+                continue  # Skip if this extension exceeds the allowed resource
+            
+            # Update cost. Here, we subtract the dual value of the current node (if not source).
+            additional_cost = -dual_values.get(f"service_{u}", 0) if u != -2 else 0
+            new_cost = cost + additional_cost
+            
+            new_path = current_path + [v]
+            new_label = (new_cost, v, new_resource, new_path)
+            
+            # Dominance check at node v: remove labels that dominate or are dominated by new_label.
+            dominated = False
+            non_dominated = []
+            for existing in labels.get(v, []):
+                # existing: (ex_cost, node, ex_resource, path)
+                # If existing label is as good or better in cost and resource, discard new_label.
+                if existing[0] <= new_cost and existing[2] <= new_resource:
+                    dominated = True
+                    break
+                # Otherwise, if new_label dominates existing, skip keeping the existing one.
+                if not (new_cost <= existing[0] and new_resource <= existing[2]):
+                    non_dominated.append(existing)
+            if dominated:
+                continue
+            
+            # Update labels at node v.
+            labels.setdefault(v, [])
+            labels[v] = non_dominated + [new_label]
+            
+            # Push the new label onto the priority queue.
+            heapq.heappush(heap, new_label)
+    
+    # After processing all labels, check for labels that have reached the sink (-1).
+    if -1 in labels:
+        best_label = min(labels[-1], key=lambda x: x[0])
+        best_path = best_label[3]
+        best_cost = best_label[0]
+        return best_path, best_cost, labels
+    else:
+        return None, None, labels
 
 def count_overlaps(selected_duties, services):
     '''
@@ -449,7 +681,7 @@ def solve_MIP(services, duties, threshold=0, cutoff= 100, mipgap = 0.01, timelim
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
 
-    model.setParam('MIPGap', mipgap)
+    # model.setParam('MIPGap', mipgap)
     model.setParam('TimeLimit', timelimit)
     model.setParam('MIPFocus', 1)
     model.setParam('Cutoff', cutoff)
@@ -461,6 +693,152 @@ def solve_MIP(services, duties, threshold=0, cutoff= 100, mipgap = 0.01, timelim
         return model.ObjVal, selected_duties, model
     else:
         return None, None, model
+    
+# //////// tried this  but it doesnt modify the number of duties
+# def solve_MIP(services, duties, threshold=0, cutoff=100, mipgap=0.01, timelimit=600):
+#     """
+#     Solves the final IP with an objective that rewards duties covering more services.
+    
+#     Instead of minimizing the total number of duties, we assign a weight to each duty.
+#     For example, weight = 1 / (number of services in the duty). This makes broader duties
+#     (covering more services) less expensive, encouraging the IP to select them.
+    
+#     Returns:
+#         model.ObjVal, selected_duties, model
+#     """
+#     model = gp.Model("CrewScheduling_IP")
+#     model.setParam('OutputFlag', 0)
+    
+#     # Calculate a weight for each duty that rewards merging
+#     duty_weights = []
+#     for duty in duties:
+#         # Ensure duty is non-empty; if empty, assign a large weight
+#         weight = 1.0 / len(duty) if len(duty) > 0 else 100.0
+#         duty_weights.append(weight)
+    
+#     duty_vars = []
+#     for i in range(len(duties)):
+#         duty_vars.append(model.addVar(vtype=GRB.BINARY, name=f"x{i}"))
+    
+#     # Modified objective: minimize the weighted sum of selected duties.
+#     model.setObjective(gp.quicksum(duty_weights[i] * duty_vars[i] for i in range(len(duties))), GRB.MINIMIZE)
+    
+#     # Each service must be covered exactly once.
+#     for service in services:
+#         model.addConstr(
+#             gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) == 1,
+#             name=f"Service_{service.serv_num}"
+#         )
+    
+#     # Set solver parameters (these remain unchanged)
+#     # model.setParam('MIPGap', mipgap)
+#     model.setParam('TimeLimit', timelimit)
+#     model.setParam('MIPFocus', 1)
+#     model.setParam('Cutoff', cutoff)
+#     model.optimize()
+    
+#     if model.status == GRB.OPTIMAL or model.status == gp.GRB.TIME_LIMIT:
+#         selected_duties = [i for i, var in enumerate(duty_vars) if var.x > 0.5]
+#         return model.ObjVal, selected_duties, model
+#     else:
+#         return None, None, model
+
+# //////////////////////////////////////////////
+# def mergeable(duty_i, duty_j, service_dict):
+#     """
+#     Returns True if duty_i and duty_j can be merged, i.e. if the last "real" service
+#     in duty_i can be feasibly followed by the first "real" service in duty_j.
+#     The source (-2) and sink (-1) nodes are ignored in the check.
+#     Debug print statements are included to trace the merging decision.
+#     """
+#     # Filter out the source (-2) and sink (-1) nodes.
+#     duty_i_filtered = [s for s in duty_i if s not in (-2, -1)]
+#     duty_j_filtered = [s for s in duty_j if s not in (-2, -1)]
+    
+#     print("Merging Debug:")
+#     print(f"Original duty_i: {duty_i}, filtered: {duty_i_filtered}")
+#     print(f"Original duty_j: {duty_j}, filtered: {duty_j_filtered}")
+    
+#     # Check that both duties have at least one "real" service.
+#     if not duty_i_filtered or not duty_j_filtered:
+#         print("One of the duties has no real services. Not mergeable.")
+#         return False
+    
+#     # Identify the last service in duty_i and the first service in duty_j.
+#     last_service_num = duty_i_filtered[-1]
+#     first_service_num = duty_j_filtered[0]
+    
+#     # Retrieve the corresponding Service objects.
+#     last_service = service_dict[last_service_num]
+#     first_service = service_dict[first_service_num]
+    
+#     print(f"Comparing merge feasibility:")
+#     print(f"  Last service in duty_i (filtered): {last_service_num} (Train: {last_service.train_num})")
+#     print(f"  First service in duty_j (filtered): {first_service_num} (Train: {first_service.train_num})")
+    
+#     # Prepare the current duty (list of Service objects) for the feasibility check.
+#     duty_i_services = [service_dict[s] for s in duty_i_filtered]
+    
+#     # Use your can_append logic to check if the first service of duty_j can follow the last service of duty_i.
+#     result = can_append(duty_i_services, first_service)
+    
+#     print(f"Merge feasibility result: {result}")
+#     return result
+
+
+
+# def solve_MIP(services, duties, service_dict, threshold=0, cutoff=100, mipgap=0.01, timelimit=600):
+#     """
+#     Final IP model that selects a set of duties (columns) such that each service is covered exactly once.
+#     We add merging constraints to discourage the selection of two duties that can be merged into one.
+#     """
+#     model = gp.Model("CrewScheduling_IP")
+#     model.setParam('OutputFlag', 0)
+    
+#     # Create binary variables for each duty.
+#     duty_vars = []
+#     for i in range(len(duties)):
+#         duty_vars.append(model.addVar(vtype=GRB.BINARY, name=f"x{i}"))
+    
+#     # Standard objective: minimize the number of selected duties.
+#     model.setObjective(gp.quicksum(duty_vars), GRB.MINIMIZE)
+    
+#     # Coverage constraints: each service must be covered exactly once.
+#     for service in services:
+#         model.addConstr(
+#             gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) == 1,
+#             name=f"Service_{service.serv_num}"
+#         )
+    
+#     # ---- Additional merging constraints ----
+#     # For every pair of duties that are mergeable (i.e. could be combined into one longer duty),
+#     # force the model not to select both. This encourages the use of longer columns.
+#     for i in range(len(duties)):
+#         for j in range(i + 1, len(duties)):
+#             if mergeable(duties[i], duties[j], service_dict):
+#                 model.addConstr(duty_vars[i] + duty_vars[j] <= 1, name=f"merge_{i}_{j}")
+    
+#     # Set solver parameters.
+#     model.setParam('MIPGap', mipgap)
+#     model.setParam('TimeLimit', timelimit)
+#     model.setParam('MIPFocus', 1)
+#     model.setParam('Cutoff', cutoff)
+#     model.optimize()
+    
+#     if model.status == GRB.OPTIMAL or model.status == gp.GRB.TIME_LIMIT:
+#         selected_duties = [i for i, var in enumerate(duty_vars) if var.x > 0.5]
+#         return model.ObjVal, selected_duties, model
+#     else:
+#         return None, None, model
+
+
+
+
+
+
+
+
+
 
 class DynamicBundleStabilisation:
     def __init__(self, services, alpha = 0.5, max_bundle_size = 10):
@@ -495,3 +873,67 @@ class DynamicBundleStabilisation:
             self.stability_center = dict(duals)
             self.best_objective = objective_value
             return duals
+        
+
+def isolve_MIP(services, duties, incumbent_duties=None, threshold=0, cutoff=100, mipgap=0.01, timelimit=600):
+    '''
+    Solves the RMLP using a MIP formulation with an optional warm start.
+    
+    Arguments:
+        services - list of Service objects,
+        duties - list of duties (each duty is a list of service numbers),
+        incumbent_duties - optional list of indices representing a warm start solution,
+        threshold - threshold for variable selection (unused in current formulation),
+        cutoff - objective cutoff value,
+        mipgap - acceptable optimality gap,
+        timelimit - time limit for the solver in seconds.
+    
+    Returns:
+        objective_value: the objective value of the solution,
+        selected_duties: list of indices for the selected duties,
+        model: the Gurobi model object.
+    '''
+    model = gp.Model("CrewScheduling_IP")
+    model.setParam('OutputFlag', 0)
+    
+    # Create binary decision variables for each duty
+    duty_vars = []
+    for i in range(len(duties)):
+        duty_vars.append(model.addVar(vtype=GRB.BINARY, name=f"x{i}"))
+    
+     # If an incumbent (warm-start solution) is provided, set the initial values.
+    if incumbent_duties is not None:
+        for i, var in enumerate(duty_vars):
+            # Debug: Report warm-start value assignment.
+            if i in incumbent_duties:
+                var.start = 1
+                print(f"Variable x{i} warm-started to 1.")
+            else:
+                var.start = 0
+                print(f"Variable x{i} warm-started to 0.")
+    else:
+        print("No incumbent solution provided; no warm-start values set.")
+    # Objective: minimize the total number of duties selected
+    model.setObjective(gp.quicksum(duty_vars), GRB.MINIMIZE)
+    
+    # For every service, ensure exactly one duty that covers it is selected
+    for service in services:
+        model.addConstr(
+            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty) == 1,
+            name=f"Service_{service.serv_num}"
+        )
+    
+    # Set solver parameters
+    model.setParam('MIPGap', mipgap)
+    model.setParam('TimeLimit', timelimit)
+    model.setParam('MIPFocus', 1)
+    model.setParam('Cutoff', cutoff)
+    
+    model.optimize()
+    
+    # Check if the solution is optimal or time limit reached
+    if model.status in [GRB.OPTIMAL, GRB.TIME_LIMIT]:
+        selected_duties = [i for i, var in enumerate(duty_vars) if var.x > 0.5]
+        return model.ObjVal, selected_duties, model
+    else:
+        return None, None, model
