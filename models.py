@@ -3,7 +3,7 @@ from gurobipy import GRB
 import networkx as nx
 from collections import defaultdict
 
-from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, solve_RMLP, new_duty_with_bellman_ford
+from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, solve_RMLP,pricing_rcsp_dag_full, new_duty_with_bellman_ford,updated_new_duty_with_bellman_ford
 
 def simple_mpc(graph, service_dict, show_logs = True, show_duties = False, show_roster_stats = False):
 
@@ -128,13 +128,13 @@ def mpc_duration_constr(graph, service_dict, show_logs = True, max_duty_duration
 
     upper_bound_path_duration.append(path_duration[-1] <= max_duty_duration)
 
-    #constraint on z -- new model 
+    # #constraint on z -- new model 
     linearisation = defaultdict(list)
     for (i,j) in graph.edges():
         constr1 = model.addConstr(edge_cumu[i,j] <= max_duty_duration *edge_vars[i,j])
         constr2 = model.addConstr(edge_cumu[i,j] <= path_duration[i])
         # constr3 = model.addConstr(edge_cumu[i,j] >= 0) #implicit
-        constr4 = model.addConstr(edge_cumu[i,j] >= path_duration[i] - (max_duty_duration* (1- edge_vars[i,j])))
+        constr4 = model.addConstr(edge_cumu[i,j] >= path_duration[i] - (max_duty_duration* (1- edge_vars[i,j]))) 
         linearisation[i,j].append(constr1)
         linearisation[i,j].append(constr2)
         # linearisation[i,j].append(constr3)
@@ -156,50 +156,287 @@ def mpc_duration_constr(graph, service_dict, show_logs = True, max_duty_duration
 
     return paths, len(paths)
 # ///////////////////////////////////////////////////////////////////////
-# considering 180 minutes as the maximum continuous work duration and 6 hours as the maximum duty duration
-def impc_duration_constr(graph, service_dict, show_logs=True, max_duty_duration=445, time_limit=60, 
-                        show_duties=False, show_roster_stats=False):
+# def updated_mpc_duration_constr(graph, service_dict, show_logs=True, max_duty_duration=8*60, time_limit=60, show_duties=False, show_roster_stats=False):
+
+#     model = gp.Model("MPC")
+#     model.setParam('OutputFlag', 0)
+#     if time_limit:
+#         model.setParam('TimeLimit', time_limit)
+
+#     incoming_var = defaultdict(list)
+#     outgoing_var = defaultdict(list)
+#     incoming_relation_var = defaultdict(list) 
+#     edge_vars = {}  # xij - binary
+#     edge_cumu = {}  # zij - continuous (pure accumulated service time)
+
+#     incoming_adj_list = nx.to_dict_of_lists(graph.reverse())
+#     # Decision Variables: create x and z for each edge.
+#     for (i, j) in graph.edges():
+#         edge_vars[i, j] = model.addVar(vtype=GRB.BINARY, name=f"x_{i}_{j}")
+#         incoming_var[j].append(edge_vars[i, j])
+#         outgoing_var[i].append(edge_vars[i, j])
+#         edge_cumu[i, j] = model.addVar(vtype=GRB.CONTINUOUS, lb=0, name=f"z_{i}_{j}")
+#         incoming_relation_var[j].append(edge_cumu[i, j])
+
+#     # Create cumulative duration (y) variables for each node.
+#     path_duration = {}    
+#     for node in graph.nodes():
+#         path_duration[node] = model.addVar(vtype=GRB.CONTINUOUS, name=f"y_{node}")
+
+#     # Objective: minimize sum of edges entering the sink (-1)
+#     model.setObjective(gp.quicksum(edge_vars[i, -1] for i in graph.nodes() if i not in [-1, -2]), GRB.MINIMIZE)
+
+#     flow_constraints = []
+#     z_y_relation_constraints = []
+#     # For each service node (excluding source and sink)
+#     for i in graph.nodes():
+#         if i in [-1, -2]:
+#             continue
+#         else:
+#             # Flow conservation: exactly one incoming edge.
+#             constr = model.addConstr(gp.quicksum(incoming_var[i]) == 1, name=f"Service_flow_{i}")
+#             flow_constraints.append(constr)
+#             # Node relation constraint with explicit gap:
+#             # For each incoming edge from j to i, we add the pure accumulated time plus gap.
+#             # Now, if j is the source (-2) or i is the sink (-1), we set gap = 0.
+#             constr2 = model.addConstr(
+#                 path_duration[i] >= service_dict[i].serv_dur + 
+#                 gp.quicksum(
+#                     edge_cumu[j, i] + (
+#                         0 if j == -2 else (service_dict[i].start_time - service_dict[j].end_time)
+#                     ) * edge_vars[j, i]
+#                     for j in incoming_adj_list[i]
+#                 ),
+#                 name=f"relation_{i}"
+#             )
+#             z_y_relation_constraints.append(constr2)
+
+#     # Source and sink relation constraints.
+#     constr2_start = model.addConstr(path_duration[-2] >= 0, name="relation_-2")
+#     z_y_relation_constraints.append(constr2_start)
+#     constr2_end = model.addConstr(path_duration[-1] >= gp.quicksum(edge_cumu[j, -1] for j in incoming_adj_list[-1]),
+#                                   name="relation_-1")
+#     z_y_relation_constraints.append(constr2_end)
+
+#     cover_constraints = []
+#     upper_bound_path_duration = []
+#     # Cover constraints: each service node has exactly one outgoing edge.
+#     for i in graph.nodes():
+#         if i in [-1, -2]:
+#             continue
+#         else:
+#             constr = model.addConstr(gp.quicksum(outgoing_var[i]) == 1, name=f"cover_{i}")
+#             cover_constraints.append(constr)
+#             constr2 = model.addConstr(path_duration[i] <= max_duty_duration, name=f"upper_{i}")
+#             upper_bound_path_duration.append(constr2)
+#     upper_bound_path_duration.append(model.addConstr(path_duration[-1] <= max_duty_duration, name="upper_-1"))
+
+#     # Linearization constraints for z (pure accumulated service time).
+#     # These constraints ensure that if edge (i,j) is used then z(i,j) equals path_duration[i].
+#     linearisation = defaultdict(list)
+#     for (i, j) in graph.edges():
+#         constr1 = model.addConstr(edge_cumu[i, j] <= max_duty_duration * edge_vars[i, j], name=f"lin_ub_{i}_{j}")
+#         constr2 = model.addConstr(edge_cumu[i, j] <= path_duration[i], name=f"lin_y_{i}_{j}")
+#         constr3 = model.addConstr(edge_cumu[i, j] >= path_duration[i] - max_duty_duration * (1 - edge_vars[i, j]), name=f"lin_lb_{i}_{j}")
+#         linearisation[i, j].append(constr1)
+#         linearisation[i, j].append(constr2)
+#         linearisation[i, j].append(constr3)
+
+#     if show_logs:
+#         print("Number of decision variables: ", len(edge_vars))
+#         print("Number of flow constraints: ", len(flow_constraints))
+#         print("Number of cover constraints: ", len(cover_constraints))
+#         print("Number of linearisation constraints: ", len(linearisation) * 3)
+#         print("Number of relationship constraints: ", len(z_y_relation_constraints))
+#         model.setParam('OutputFlag', 0)
+        
+#     model.optimize()
+
+#     paths, paths_decision_vars = generate_paths(outgoing_var, show_duties)
+#     if show_roster_stats:
+#         roster_statistics(paths, service_dict)
+
+#     return paths, len(paths)
+
+# ///////////drive durtion +path duration take 2///////////////////////////////////////////////////////
+
+# def updated_mpc_duration_constr(graph, service_dict, show_logs=True, max_drive_duration=6*60, max_duty_duration=8*60, time_limit=60, show_duties=False, show_roster_stats=False):
+#     model = gp.Model("MPC")
+#     if time_limit:
+#         model.setParam('TimeLimit', time_limit)
+#     """
+#     Updated model with two types of cumulative duration:
+#       - path_duration: total drive duration (sum of service durations only)
+#       - duty_duration: overall duty duration (drive time plus gap/wait time between services)
+      
+#     Parameters:
+#       - max_duty_duration: maximum allowed drive time (service durations only)
+#       - max_total_duty_duration: maximum allowed overall duty time (drive time + waiting)
+#     """
+#     model = gp.Model("MPC")
+#     if time_limit:
+#         model.setParam('TimeLimit', time_limit)
+
+#     # Dictionaries for drive-time tracking (as before)
+#     incoming_var = defaultdict(list)
+#     outgoing_var = defaultdict(list)
+#     incoming_relation_var = defaultdict(list)
+#     edge_vars = {}  # binary decision variables for edges
+#     edge_cumu = {}  # continuous variable for drive-time propagation (without gap)
+
+#     # Build incoming adjacency list (for drive time)
+#     incoming_adj_list = nx.to_dict_of_lists(graph.reverse())
+
+#     # Create decision variables for each edge (drive time part)
+#     for (i, j) in graph.edges():
+#         edge_vars[i, j] = model.addVar(vtype=GRB.BINARY, name=f"x_{i}_{j}")
+#         incoming_var[j].append(edge_vars[i, j])
+#         outgoing_var[i].append(edge_vars[i, j])
+#         edge_cumu[i, j] = model.addVar(vtype=GRB.CONTINUOUS, lb=0, name=f"z_{i}_{j}")
+#         incoming_relation_var[j].append(edge_cumu[i, j])
+
+#     # Create drive-time cumulative variables for each node.
+#     path_duration = {}
+#     for node in graph.nodes():
+#         path_duration[node] = model.addVar(vtype=GRB.CONTINUOUS, name=f"y_{node}")
+
+#     # OBJECTIVE: minimize the number of duties (edges into sink -1)
+#     model.setObjective(gp.quicksum(edge_vars[i, -1] for i in graph.nodes() if i not in [-1, -2]), GRB.MINIMIZE)
+
+#     # CONSTRAINTS for drive time (service durations only)
+#     flow_constraints = []
+#     z_y_relation_constraints = []
+#     for i in graph.nodes():
+#         if i in [-1, -2]:
+#             continue
+#         # Each service node must have exactly one incoming edge.
+#         constr = model.addConstr(gp.quicksum(incoming_var[i]) == 1, name=f"Service_flow_{i}")
+#         flow_constraints.append(constr)
+#         # The drive time at node i is at least its service duration plus the cumulative drive time carried by incoming edges.
+#         constr2 = model.addConstr(path_duration[i] >= service_dict[i].serv_dur +
+#                                   gp.quicksum(edge_cumu[j, i] for j in incoming_adj_list[i]),
+#                                   name=f"relation_{i}")
+#         z_y_relation_constraints.append(constr2)
+
+#     # For the source (-2) and sink (-1)
+#     constr2_start = model.addConstr(path_duration[-2] >= 0, name="relation_-2")
+#     z_y_relation_constraints.append(constr2_start)
+#     constr2_end = model.addConstr(path_duration[-1] >= gp.quicksum(edge_cumu[j, -1] for j in incoming_adj_list[-1]),
+#                                   name="relation_-1")
+#     z_y_relation_constraints.append(constr2_end)
+
+#     # COVER CONSTRAINTS for drive time: each service node has exactly one outgoing edge.
+#     cover_constraints = []
+#     upper_bound_path_duration = []
+#     for i in graph.nodes():
+#         if i in [-1, -2]:
+#             continue
+#         constr = model.addConstr(gp.quicksum(outgoing_var[i]) == 1, name=f"cover_{i}")
+#         cover_constraints.append(constr)
+#         # Upper bound on drive time at node i.
+#         constr2 = model.addConstr(path_duration[i] <= max_drive_duration)
+#         upper_bound_path_duration.append(constr2)
+#     upper_bound_path_duration.append(model.addConstr(path_duration[-1] <= max_drive_duration))
+
+#     # LINEARISATION CONSTRAINTS for drive time propagation (edge_cumu variables)
+#     linearisation = defaultdict(list)
+#     for (i, j) in graph.edges():
+#         constr1 = model.addConstr(edge_cumu[i, j] <= max_drive_duration * edge_vars[i, j])
+#         constr2 = model.addConstr(edge_cumu[i, j] <= path_duration[i])
+#         constr3 = model.addConstr(edge_cumu[i, j] >= path_duration[i] - (max_drive_duration * (1 - edge_vars[i, j])))
+#         linearisation[i, j].append(constr1)
+#         linearisation[i, j].append(constr2)
+#         linearisation[i, j].append(constr3)
+
+#     # ----- NEW SECTION: Overall Duty Duration (drive + gap/wait time) -----
+#     # Create new cumulative variables for overall duty duration at each node.
+#     duty_duration = {}
+#     for node in graph.nodes():
+#         duty_duration[node] = model.addVar(vtype=GRB.CONTINUOUS, name=f"duty_{node}")
+
+#     # Create new edge variables to propagate duty duration (includes gap time).
+#     edge_duty = {}
+#     for (i, j) in graph.edges():
+#         edge_duty[i, j] = model.addVar(vtype=GRB.CONTINUOUS, lb=0, name=f"ed_{i}_{j}")
+
+#     # Duty relation constraints: for each service node, overall duty time is
+#     # its service duration plus the cumulative duty carried in from predecessors.
+#     for i in graph.nodes():
+#         if i in [-1, -2]:
+#             continue
+#         model.addConstr(duty_duration[i] >= service_dict[i].serv_dur +
+#                         gp.quicksum(edge_duty[j, i] for j in incoming_adj_list[i]),
+#                         name=f"duty_relation_{i}")
+
+#     # Set source and sink duty durations.
+#     model.addConstr(duty_duration[-2] >= 0, name="duty_relation_-2")
+#     model.addConstr(duty_duration[-1] >= gp.quicksum(edge_duty[j, -1] for j in incoming_adj_list[-1]),
+#                     name="duty_relation_-1")
+
+#     # Linearisation constraints for duty duration propagation:
+#     # For each edge, duty at node i plus the gap to j is carried by edge_duty.
+#     # Define gap for edge (i,j): if both are actual services, gap = start_time(j) - end_time(i); else gap = 0.
+#     duty_linearisation = defaultdict(list)
+#     for (i, j) in graph.edges():
+#         if i in service_dict and j in service_dict:
+#             gap = service_dict[j].start_time - service_dict[i].end_time
+#         else:
+#             gap = 0
+#         # Use a big-M value for duty duration propagation.
+#         M = max_duty_duration  
+#         duty_constr1 = model.addConstr(edge_duty[i, j] <= M * edge_vars[i, j])
+#         duty_constr2 = model.addConstr(edge_duty[i, j] <= duty_duration[i] + gap)
+#         duty_constr3 = model.addConstr(edge_duty[i, j] >= (duty_duration[i] + gap) - M * (1 - edge_vars[i, j]))
+#         duty_linearisation[i, j].append(duty_constr1)
+#         duty_linearisation[i, j].append(duty_constr2)
+#         duty_linearisation[i, j].append(duty_constr3)
+
+#     # Upper bound on overall duty duration at each service node and sink.
+#     for i in graph.nodes():
+#         if i not in [-1, -2]:
+#             model.addConstr(duty_duration[i] <= max_duty_duration, name=f"duty_ub_{i}")
+#     model.addConstr(duty_duration[-1] <= max_duty_duration, name="duty_ub_-1")
+
+#     # ----- End New Duty Duration Section -----
+
+#     if not show_logs:
+#         print("Number of decision variables: ", len(edge_vars))
+#         print("Number of flow constraints: ", len(flow_constraints))
+#         print("Number of cover constraints: ", len(cover_constraints))
+#         print("Number of drive linearisation constraints: ", len(linearisation) * 3)
+#         print("Number of drive relation constraints: ", len(z_y_relation_constraints))
+#         print("Number of duty linearisation constraints: ", len(duty_linearisation) * 3)
+#         model.setParam('OutputFlag', 0)
+#     model.optimize()
+
+#     paths, paths_decision_vars = generate_paths(outgoing_var, show_duties)
+#     if show_roster_stats:
+#         roster_statistics(paths, service_dict)
+
+#     return paths, len(paths)
+
+
+
+
+# ///////////////////////////////////////////////////////////////////////
+# //////////////////////////////drive durtion +path duration take 1/////////////////////////////////////////
+def updated_mpc_duration_constr(graph, service_dict, show_logs=True, max_duty_duration=8*60, max_drive_duration=6*60, time_limit=60, show_duties=False, show_roster_stats=False):
+    # Create the model and set a time limit if provided.
     model = gp.Model("MPC")
     if time_limit:
         model.setParam('TimeLimit', time_limit)
 
-    # Data structures for decision variables
+    # Initialize dictionaries for decision variables.
     incoming_var = defaultdict(list)
     outgoing_var = defaultdict(list)
     incoming_relation_var = defaultdict(list)
-    edge_vars = {}   # Binary variables for edge selection
-    edge_cumu = {}   # Continuous variables for cumulative (waiting) time along an edge
+    edge_vars = {}  # Binary variables for using an edge (i,j)
+    edge_cumu = {}  # Continuous variables used in linearization for drive duration
 
+    # Build incoming adjacency list from the reversed graph.
     incoming_adj_list = nx.to_dict_of_lists(graph.reverse())
 
-    # Precompute edge types using a helper function (or inline logic)
-    # "direct": satisfies direct connection conditions
-    # "break": satisfies the break conditions (reset work time)
-    # "other": fallback case (treated like direct)
-    edge_type = {}
-    for (i, j) in graph.edges():
-        if i in service_dict and j in service_dict:
-            service_i = service_dict[i]
-            service_j = service_dict[j]
-            start_end_stn_tf = service_i.end_stn == service_j.start_stn
-            start_end_time_tf = 5 <= (service_j.start_time - service_i.end_time) <= 15
-            start_end_stn_tf_after_break = service_i.end_stn[:4] == service_j.start_stn[:4]
-            start_end_time_within = 50 <= (service_j.start_time - service_i.end_time) <= 150
-            if service_i.stepback_train_num == "No StepBack":
-                start_end_rake_tf = service_i.train_num == service_j.train_num
-            else:
-                start_end_rake_tf = service_i.stepback_train_num == service_j.train_num
-
-            if start_end_rake_tf and start_end_stn_tf and start_end_time_tf:
-                edge_type[(i, j)] = "direct"
-            elif start_end_time_within and start_end_stn_tf_after_break:
-                edge_type[(i, j)] = "break"
-            else:
-                edge_type[(i, j)] = "other"
-        else:
-            edge_type[(i, j)] = "other"
-
-    # Decision Variables: for every edge, add binary and continuous (edge_cumu) variables
+    # Decision variables: for each edge (i, j)
     for (i, j) in graph.edges():
         edge_vars[i, j] = model.addVar(vtype=GRB.BINARY, name=f"x_{i}_{j}")
         incoming_var[j].append(edge_vars[i, j])
@@ -207,110 +444,121 @@ def impc_duration_constr(graph, service_dict, show_logs=True, max_duty_duration=
         edge_cumu[i, j] = model.addVar(vtype=GRB.CONTINUOUS, lb=0, name=f"z_{i}_{j}")
         incoming_relation_var[j].append(edge_cumu[i, j])
 
-    # Variables to track overall shift time and active working time
+    # Introduce two sets of node variables:
+    #   drive_duration: sum of service durations only (the "driving" time)
+    #   path_duration: drive_duration plus waiting (gap) times (overall elapsed time).
+    drive_duration = {}
     path_duration = {}
-    work_time = {}
     for node in graph.nodes():
-        path_duration[node] = model.addVar(vtype=GRB.CONTINUOUS, name=f"y_{node}")
-        work_time[node] = model.addVar(vtype=GRB.CONTINUOUS, name=f"w_{node}")
+        drive_duration[node] = model.addVar(vtype=GRB.CONTINUOUS, name=f"y_{node}")
+        path_duration[node] = model.addVar(vtype=GRB.CONTINUOUS, name=f"t_{node}")
 
-    # Objective: Minimize the sum of edge variables from nodes to sink (-1)
-    model.setObjective(gp.quicksum(edge_vars[i, -1] for i in graph.nodes() if i not in [-1, -2]),
-                       GRB.MINIMIZE)
+    # Objective: minimize the number of duties (edges reaching the sink, node -1)
+    model.setObjective(gp.quicksum(edge_vars[i, -1] for i in graph.nodes() if i not in [-1, -2]), GRB.MINIMIZE)
 
-    # Flow Conservation and Path Duration Relations
+    # Flow conservation and drive duration relationship.
     flow_constraints = []
-    z_y_relation_constraints = []
+    drive_relation_constraints = []
     for i in graph.nodes():
         if i in [-1, -2]:
             continue
-        constr = model.addConstr(gp.quicksum(incoming_var[i]) == 1, name=f"Service_flow_{i}")
-        flow_constraints.append(constr)
-        constr2 = model.addConstr(
-            path_duration[i] >= service_dict[i].serv_dur + gp.quicksum(edge_cumu[j, i] for j in incoming_adj_list[i]),
-            name=f"relation_{i}"
-        )
-        z_y_relation_constraints.append(constr2)
-
-    # Source and sink path_duration settings
-    constr2_start = model.addConstr(path_duration[-2] >= 0, name="relation_-2")
-    z_y_relation_constraints.append(constr2_start)
-    constr2_end = model.addConstr(
-        path_duration[-1] >= gp.quicksum(edge_cumu[j, -1] for j in incoming_adj_list[-1]),
-        name="relation_-1"
-    )
-    z_y_relation_constraints.append(constr2_end)
-
-    # Work Time Update: track the cumulative active service time
-    model.addConstr(work_time[-2] == 0, name="work_time_start")
-    # Use max_duty_duration as our Big-M value.
-    for (i, j) in graph.edges():
-        # Only apply work time update if both nodes represent actual services.
-        if i not in service_dict or j not in service_dict:
-            continue
-        if edge_type[(i, j)] == "direct":
-            model.addConstr(
-                work_time[j] >= work_time[i] + service_dict[j].serv_dur - max_duty_duration * (1 - edge_vars[i, j]),
-                name=f"work_update_direct_{i}_{j}"
-            )
-        elif edge_type[(i, j)] == "break":
-            model.addConstr(
-                work_time[j] >= service_dict[j].serv_dur - max_duty_duration * (1 - edge_vars[i, j]),
-                name=f"work_update_break_{i}_{j}"
-            )
         else:
-            model.addConstr(
-                work_time[j] >= work_time[i] + service_dict[j].serv_dur - max_duty_duration * (1 - edge_vars[i, j]),
-                name=f"work_update_{i}_{j}"
+            # Each service node gets exactly one incoming edge.
+            constr = model.addConstr(gp.quicksum(incoming_var[i]) == 1, name=f"Service_flow_{i}")
+            flow_constraints.append(constr)
+            # The drive duration at node i must be at least its own service duration plus
+            # the accumulated contribution (via edge_cumu) from incoming edges.
+            constr2 = model.addConstr(
+                drive_duration[i] >= service_dict[i].serv_dur + gp.quicksum(edge_cumu[j, i] for j in incoming_adj_list[i]),
+                name=f"relation_drive_{i}"
             )
+            drive_relation_constraints.append(constr2)
 
-    # Cover Constraints: ensure each service (except source and sink) is covered exactly once
+    # For the source (-2) and sink (-1) nodes.
+    constr_source_drive = model.addConstr(drive_duration[-2] >= 0, name="relation_drive_-2")
+    drive_relation_constraints.append(constr_source_drive)
+    constr_sink_drive = model.addConstr(
+        drive_duration[-1] >= gp.quicksum(edge_cumu[j, -1] for j in incoming_adj_list[-1]),
+        name="relation_drive_-1"
+    )
+    drive_relation_constraints.append(constr_sink_drive)
+
+    # Cover constraints: each service node must have exactly one outgoing edge.
     cover_constraints = []
+    drive_upper_bound_constraints = []
     for i in graph.nodes():
         if i in [-1, -2]:
             continue
-        constr = model.addConstr(gp.quicksum(outgoing_var[i]) == 1, name=f"cover_{i}")
-        cover_constraints.append(constr)
+        else:
+            constr = model.addConstr(gp.quicksum(outgoing_var[i]) == 1, name=f"cover_{i}")
+            cover_constraints.append(constr)
+            # Use max_drive_duration as the upper bound for drive duration.
+            constr2 = model.addConstr(drive_duration[i] <= max_drive_duration, name=f"drive_bound_{i}")
+            drive_upper_bound_constraints.append(constr2)
+    drive_upper_bound_constraints.append(model.addConstr(drive_duration[-1] <= max_drive_duration, name="drive_bound_-1"))
 
-    # Linearisation constraints on edge_cumu (z_ij)
+    # Linearization constraints for edge cumulative drive durations.
     linearisation = defaultdict(list)
     for (i, j) in graph.edges():
-        constr1 = model.addConstr(edge_cumu[i, j] <= max_duty_duration * edge_vars[i, j],
-                                  name=f"lin1_{i}_{j}")
-        constr2 = model.addConstr(edge_cumu[i, j] <= path_duration[i],
-                                  name=f"lin2_{i}_{j}")
-        constr4 = model.addConstr(edge_cumu[i, j] >= path_duration[i] - (max_duty_duration * (1 - edge_vars[i, j])),
-                                  name=f"lin4_{i}_{j}")
+        constr1 = model.addConstr(edge_cumu[i, j] <= max_duty_duration * edge_vars[i, j], name=f"lin1_{i}_{j}")
+        constr2 = model.addConstr(edge_cumu[i, j] <= drive_duration[i], name=f"lin2_{i}_{j}")
+        constr4 = model.addConstr(edge_cumu[i, j] >= drive_duration[i] - max_duty_duration * (1 - edge_vars[i, j]), name=f"lin4_{i}_{j}")
         linearisation[i, j].append(constr1)
         linearisation[i, j].append(constr2)
         linearisation[i, j].append(constr4)
 
-    # Upper Bound Constraints for the New Rules:
-    model.addConstr(path_duration[-1] <= 445, name="shift_time_limit")
-    model.addConstr(work_time[-1] <= 180, name="work_time_limit")
+    # New constraints for path_duration that incorporate waiting (gap) times.
+    path_relation_constraints = []
+    # Set the path_duration at the source (-2) to 0.
+    source_path_constr = model.addConstr(path_duration[-2] == 0, name="path_source")
+    path_relation_constraints.append(source_path_constr)
+    # For each edge, add a constraint that propagates path_duration.
+    # gap_ij is defined as (service_dict[j].start_time - service_dict[i].end_time) for service edges.
+    # For edges from the source (-2) or to the sink (-1), we set gap_ij = 0.
+    for (i, j) in graph.edges():
+        if i == -2 or j == -1:
+            gap_ij = 0
+        else:
+            gap_ij = service_dict[j].start_time - service_dict[i].end_time
+        # For service duration of node j, if j is not in service_dict (e.g. sink), then use 0.
+        service_dur_j = service_dict[j].serv_dur if j in service_dict else 0
+        # Big-M constant for linearization.
+        M = max_duty_duration
+        constr_path = model.addConstr(
+            path_duration[j] >= path_duration[i] + gap_ij + service_dur_j - M * (1 - edge_vars[i, j]),
+            name=f"relation_path_{i}_{j}"
+        )
+        path_relation_constraints.append(constr_path)
+    # Enforce an upper bound on path_duration at the sink.
+    sink_path_bound = model.addConstr(path_duration[-1] <= max_duty_duration, name="path_bound_sink")
+    path_relation_constraints.append(sink_path_bound)
+    
+    # New: Add an upper bound for path_duration at each intermediate node.
+    path_upper_bound_constraints = []
+    for i in graph.nodes():
+        if i not in [-1, -2]:
+            constr_bound = model.addConstr(path_duration[i] <= max_duty_duration, name=f"path_bound_{i}")
+            path_upper_bound_constraints.append(constr_bound)
 
     if not show_logs:
-        print("Number of decision variables:", len(edge_vars))
-        print("Number of flow constraints:", len(flow_constraints))
-        print("Number of cover constraints:", len(cover_constraints))
-        print("Number of relation constraints:", len(z_y_relation_constraints))
+        print("Number of decision variables: ", len(edge_vars))
+        print("Number of flow constraints: ", len(flow_constraints))
+        print("Number of cover constraints: ", len(cover_constraints))
+        print("Number of linearisation constraints: ", len(linearisation) * 3)
+        print("Number of drive relation constraints: ", len(drive_relation_constraints))
+        print("Number of path relation constraints: ", len(path_relation_constraints))
+        print("Number of path upper-bound constraints: ", len(path_upper_bound_constraints))
         model.setParam('OutputFlag', 0)
 
     model.optimize()
 
-    # Check if the optimization produced a feasible solution
-    if model.status != GRB.OPTIMAL:
-        print("No optimal solution found. Status:", model.status)
-        return [], 0
-
-    # Retrieve solution paths only if a solution exists.
     paths, paths_decision_vars = generate_paths(outgoing_var, show_duties)
     if show_roster_stats:
         roster_statistics(paths, service_dict)
 
     return paths, len(paths)
 
-
+# ////////////////////////////////////////////////////////
 def lazy(graph, service_dict, show_logs = True, max_duty_duration=6*60, lazy_iterations =100, show_lazy_updates_every = 10, show_duties = False, show_roster_stats = False):
     model = gp.Model("Lazy")
 
@@ -414,4 +662,62 @@ def column_generation(method, graph, services, init_duties, num_iter = 10, thres
         print("Invalid method. Please choose either 1 or 2.")
         return
 
+def run_column_generation(services, graph, service_dict, init_duties, 
+                                   threshold=-1e-6, max_duration=6*60, max_iter=100000):
+    """
+    Runs the column generation phase, logging iteration number, LP objective,
+    new column reduced cost, generated path, and a message for special termination conditions.
+
+    Parameters:
+      services     : List of Service objects.
+      graph        : A NetworkX directed graph representing the service network.
+      service_dict : Dictionary mapping service numbers to Service objects.
+      init_duties  : Initial list of duties (each duty is a list of service numbers).
+      threshold    : Convergence threshold for the reduced cost (e.g., -1e-6).
+      max_duration : Maximum allowed duty duration (in minutes).
+      max_iter     : Maximum number of iterations.
+      
+    Returns:
+      duties_pool  : The updated list of duties (columns) after generation.
+      logs         : A list of tuples:
+                     (iteration number, LP objective, new duty cost, path, message)
+    """
+    duties_pool = init_duties.copy()
+    logs = []
+    print("Number of duties before column generation:", len(duties_pool))
     
+    for iter_num in range(max_iter):
+        selected_duties, duals, selected_duty_vars, obj = solve_RMLP(services, duties_pool)
+        current_max_duration = max_duration
+
+        # path, cost = pricing_rcsp_dag_full(graph, duals, service_dict, current_max_duration)
+        path, cost, graphcopy = updated_new_duty_with_bellman_ford(graph, duals, service_dict, current_max_duration)
+        # path, cost = pricing_rcsp_topolabel(graph, duals, service_dict, current_max_duration)
+        
+        # Initialize message as empty; we'll update it if one of the conditions occurs.
+        message = ""
+        print(f"Iteration {iter_num}: LP Obj = {obj}, New duty cost = {cost}, Path = {path}")
+        
+        # Check termination conditions and record message
+        if path is None:
+            message = "No path found."
+            logs.append((iter_num, obj, cost, path, message))
+            print(message)
+            break
+        elif path[1:-1] in duties_pool:
+            message = "Path already present, skipping."
+            logs.append((iter_num, obj, cost, path, message))
+            print(message)
+            continue
+        elif cost >= threshold:
+            message = "Column generation converged: No new column with significant negative reduced cost."
+            logs.append((iter_num, obj, cost, path, message))
+            print(message)
+            break
+        else:
+            logs.append((iter_num, obj, cost, path, message))
+        
+        # Append the new duty (excluding the artificial source and sink) if valid.
+        duties_pool.append(path[1:-1])
+    
+    return duties_pool, logs
