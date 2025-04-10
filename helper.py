@@ -898,77 +898,182 @@ def updated_new_duty_with_bellman_ford(graph, dual_values, service_dict, max_dur
 #         return None, None, labels
 
 
-def new_duty_with_RCSP(graph, dual_values, service_dict, max_resource):
-    """
-    Finds a new duty (path from -2 to -1) using an RCSP algorithm.
+# def new_duty_with_RCSP(graph, dual_values, service_dict, max_resource):
+#     """
+#     Finds a new duty (path from -2 to -1) using an RCSP algorithm.
     
-    Parameters:
-      graph         - The directed graph (NetworkX DiGraph).
-      dual_values   - Dictionary with dual values (e.g., {"service_1": value, ...}).
-      service_dict  - Dictionary mapping service number to Service objects.
-      max_resource  - Maximum allowed resource (e.g., maximum duty duration in minutes).
+#     Parameters:
+#       graph         - The directed graph (NetworkX DiGraph).
+#       dual_values   - Dictionary with dual values (e.g., {"service_1": value, ...}).
+#       service_dict  - Dictionary mapping service number to Service objects.
+#       max_resource  - Maximum allowed resource (e.g., maximum duty duration in minutes).
       
-    Returns:
-      best_path     - The path (list of nodes) for the new duty.
-      best_cost     - The associated reduced cost.
-      labels        - Dictionary of labels at each node.
-    """
-    # Initialize label at source (-2)
-    labels = {-2: [(-2, 0, 0, [-2])]}  # (current_node, cost, resource, path)
-    queue = [-2]
+#     Returns:
+#       best_path     - The path (list of nodes) for the new duty.
+#       best_cost     - The associated reduced cost.
+#       labels        - Dictionary of labels at each node.
+#     """
+#     # Initialize label at source (-2)
+#     labels = {-2: [(-2, 0, 0, [-2])]}  # (current_node, cost, resource, path)
+#     queue = [-2]
     
-    while queue:
-        u = queue.pop(0)
-        for label in labels[u]:
-            current_node, current_cost, current_resource, current_path = label
-            for v in graph.successors(u):
-                # Calculate the transition time from u to v:
-                transition_time = 0
-                if u not in [-2, -1] and v not in [-2, -1]:
-                    # Ensure service u has an end time and service v has a start time.
-                    transition_time = max(0, service_dict[v].start_time - service_dict[u].end_time)
-                # Otherwise, for edges involving source/sink, you may define transition_time as 0.
+#     while queue:
+#         u = queue.pop(0)
+#         for label in labels[u]:
+#             current_node, current_cost, current_resource, current_path = label
+#             for v in graph.successors(u):
+#                 # Calculate the transition time from u to v:
+#                 transition_time = 0
+#                 if u not in [-2, -1] and v not in [-2, -1]:
+#                     # Ensure service u has an end time and service v has a start time.
+#                     transition_time = max(0, service_dict[v].start_time - service_dict[u].end_time)
+#                 # Otherwise, for edges involving source/sink, you may define transition_time as 0.
                 
-                # Calculate the new service duration at v (if v is a service)
-                additional_duration = service_dict[v].serv_dur if v not in [-2, -1] else 0
+#                 # Calculate the new service duration at v (if v is a service)
+#                 additional_duration = service_dict[v].serv_dur if v not in [-2, -1] else 0
                 
-                # new_resource = current_resource + transition_time + additional_duration
-                new_resource = current_resource + additional_duration
-                # If new resource exceeds limit, skip
-                if new_resource > max_resource:
-                    continue
+#                 # new_resource = current_resource + transition_time + additional_duration
+#                 new_resource = current_resource + additional_duration
+#                 # If new resource exceeds limit, skip
+#                 if new_resource > max_resource:
+#                     continue
                 
-                # Update cost; here we subtract the dual value for node u if applicable.
-                additional_cost = -dual_values.get(f"service_{u}", 0) if u not in [-2] else 0
-                new_cost = current_cost + additional_cost
-                new_path = current_path + [v]
-                new_label = (v, new_cost, new_resource, new_path)
+#                 # Update cost; here we subtract the dual value for node u if applicable.
+#                 additional_cost = -dual_values.get(f"service_{u}", 0) if u not in [-2] else 0
+#                 new_cost = current_cost + additional_cost
+#                 new_path = current_path + [v]
+#                 new_label = (v, new_cost, new_resource, new_path)
                 
-                # Dominance check at node v
-                dominated = False
-                non_dominated = []
-                for existing in labels.get(v, []):
-                    if existing[1] <= new_cost and existing[2] <= new_resource:
-                        dominated = True
-                        break
-                    if not (new_cost <= existing[1] and new_resource <= existing[2]):
-                        non_dominated.append(existing)
-                if dominated:
-                    continue
-                labels[v] = non_dominated + [new_label]
-                if v not in queue:
-                    queue.append(v)
+#                 # Dominance check at node v
+#                 dominated = False
+#                 non_dominated = []
+#                 for existing in labels.get(v, []):
+#                     if existing[1] <= new_cost and existing[2] <= new_resource:
+#                         dominated = True
+#                         break
+#                     if not (new_cost <= existing[1] and new_resource <= existing[2]):
+#                         non_dominated.append(existing)
+#                 if dominated:
+#                     continue
+#                 labels[v] = non_dominated + [new_label]
+#                 if v not in queue:
+#                     queue.append(v)
                     
-    if -1 in labels:
-        best_label = min(labels[-1], key=lambda x: x[1])
-        return best_label[3], best_label[1], labels
-    else:
-        return None, None, labels
+#     if -1 in labels:
+#         best_label = min(labels[-1], key=lambda x: x[1])
+#         return best_label[3], best_label[1], labels
+#     else:
+#         return None, None, labels
 
+# # 
+# # ///////////////////////////////////////////////////////////////////////////////////////////////
+# greedy topo
+# import networkx as nx
+def greedy_pricing_topo(graph, dual_values, service_dict, time_constr):
+        for u, v in graph.edges():
+            if u == -2:
+                graph[u][v]['weight'] = 0
+            else:
+                # graph[u][v]['weight'] = dual_values[u]
+                graph[u][v]['weight'] = dual_values[f"service_{u}"]
+
+        topo_order = list(nx.topological_sort(graph))
+
+        longest_dist = {node: float('-inf') for node in graph.nodes}
+        longest_dist[-2] = 0  # Distance to source is 0
+        duration = {node: 0 for node in graph.nodes}
+        predecessor = {node: None for node in graph.nodes} 
+
+        # Relax edges in topological order
+        for u in topo_order:
+            for v in graph.successors(u):  
+                weight = graph[u][v].get('weight')
+                if v!=-1:
+                    succ_dur = service_dict[v].serv_dur
+                else:
+                    succ_dur = 0  
+                if longest_dist[v] < longest_dist[u] + weight and duration[u] + succ_dur <=time_constr:
+                    longest_dist[v] = longest_dist[u] + weight
+                    duration[v] = duration[u] + succ_dur
+                    predecessor[v] = u
+
+        
+        shortest_path = []
+        curr = -1
+
+        while curr is not None:  
+            shortest_path.append(curr)
+            curr = predecessor[curr]
+        # shortest_path.pop()
+        shortest_path.reverse()  
+        # shortest_path.pop()
+
+        return shortest_path[1:-1], (1- longest_dist[-1] ) # Exclude source and sink from the path
+# def greedy_pricing_topo(graph, duals, service_dict, R=360):
+#     """
+#     Heuristic DAG pricing: keep one best (dual_sum, duration) per node.
+#     Tail‐charging: on edge u->v, add dur[u] and pi[u].
+#     Returns (path, reduced_cost) or (None, inf) if no feasible path.
+#     """
+
+#     # 1. Assign edge weights = dual[u]
+#     for u, v in graph.edges():
+#         graph[u][v]['weight'] = 0 if u == -2 else duals.get(f"Service_{u}", 0.0)
+
+#     # 2. Topological order
+#     topo = list(nx.topological_sort(graph))
+
+#     # 3. Single best per node
+#     best_dual = {node: float('-inf') for node in graph.nodes()}
+#     best_dur  = {node: float('inf') for node in graph.nodes()}
+#     pred      = {node: None for node in graph.nodes()}
+
+#     best_dual[-2] = 0.0
+#     best_dur[-2]  = 0
+
+#     # 4. Relax in topo order
+#     for u in topo:
+#         du = best_dual[u]
+#         ru = best_dur[u]
+#         if du == float('-inf'):
+#             continue  # unreachable
+
+#         pi_u  = 0.0 if u in (-2, -1) else duals.get[f"Service_{u}"]
+#         dur_u = 0   if u in (-2, -1) else service_dict[u].serv_dur
+
+#         for v in graph.successors(u):
+#             w = graph[u][v]['weight']  # = pi_u (or 0 if u==-2)
+#             new_du = du + w
+#             new_ru = ru + dur_u
+#             if new_du > best_dual[v] and new_ru <= R :
+#                 best_dual[v] = new_du
+#                 best_dur[v]  = new_ru
+#                 pred[v]      = u
+
+#     # 5. If sink unreachable under cap, no column
+#     if best_dual[-1] == float('-inf'):
+#         return None, float('inf')
+
+#     # 6. Reconstruct path
+#     path = []
+#     cur  = -1
+#     while cur is not None:
+#         path.append(cur)
+#         cur = pred[cur]
+#     path.reverse()
+
+#     # strip source/sink from returned column
+#     col = path[1:-1]
+
+#     # 7. Reduced cost = 1 - sum duals on services
+#     total_dual = sum(duals.get(f"Service_{u}", 0.0) for u in col)
+#     reduced_cost = 1.0 - total_dual
+
+#     return col, reduced_cost
 
 # ///////////////////////////////////////////////////////////////////////////////////////////////
 # topo then dp optimized
-import networkx as nx
+
 import bisect
 
 def pricing_rcsp_dag_full(graph, duals, service_dict, R=360):
@@ -2304,6 +2409,9 @@ def solve_final_ip(services, duties, mip_gap=0.01, time_limit=600):
     #             print(f"Service {service.serv_num} covered correctly: {lhs_val} = {constr.RHS}")
     return obj_val, selected, model
 # /////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
 # ///network redutcion
 # import networkx as nx
 

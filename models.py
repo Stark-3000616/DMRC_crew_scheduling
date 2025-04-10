@@ -3,7 +3,7 @@ from gurobipy import GRB
 import networkx as nx
 from collections import defaultdict
 
-from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, solve_RMLP,pricing_rcsp_dag_full, new_duty_with_bellman_ford,updated_new_duty_with_bellman_ford
+from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, solve_RMLP,pricing_rcsp_dag_full, new_duty_with_bellman_ford,updated_new_duty_with_bellman_ford,greedy_pricing_topo
 
 def simple_mpc(graph, service_dict, show_logs = True, show_duties = False, show_roster_stats = False):
 
@@ -691,7 +691,8 @@ def run_column_generation(services, graph, service_dict, init_duties,
         current_max_duration = max_duration
 
         # path, cost = pricing_rcsp_dag_full(graph, duals, service_dict, current_max_duration)
-        path, cost, graphcopy = updated_new_duty_with_bellman_ford(graph, duals, service_dict, current_max_duration)
+        path, cost = greedy_pricing_topo(graph, duals, service_dict, current_max_duration)
+        # path, cost, graphcopy = updated_new_duty_with_bellman_ford(graph, duals, service_dict, current_max_duration)
         # path, cost = pricing_rcsp_topolabel(graph, duals, service_dict, current_max_duration)
         
         # Initialize message as empty; we'll update it if one of the conditions occurs.
@@ -708,7 +709,7 @@ def run_column_generation(services, graph, service_dict, init_duties,
             message = "Path already present, skipping."
             logs.append((iter_num, obj, cost, path, message))
             print(message)
-            continue
+            break
         elif cost >= threshold:
             message = "Column generation converged: No new column with significant negative reduced cost."
             logs.append((iter_num, obj, cost, path, message))
