@@ -363,7 +363,8 @@ def restricted_linear_program(service_dict, duties, show_solutions = False, show
     service_constraints = []
     for service_idx, service in enumerate(service_dict.values()):
         constr = model.addConstr(
-            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)>= 1,
+            # gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)>= 1,
+            gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)== 1,
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
 
@@ -423,7 +424,7 @@ def restricted_linear_program(service_dict, duties, show_solutions = False, show
         return objective.getValue(), duals, basis, selected_duties, selected_duties_vars
     else:
         print("No optimal solution found.")
-        return None, None, None, None
+        return None, None, None, None, None
 
 def restricted_linear_program_for_heuristic(service_dict, duties, selected_vars, show_solutions = False, show_objective = False, warm_start_solution=None, t=0):
 
@@ -448,6 +449,7 @@ def restricted_linear_program_for_heuristic(service_dict, duties, selected_vars,
     for service_idx, service in enumerate(service_dict.values()):
         constr = model.addConstr(
             gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)>= 1,
+            # gp.quicksum(duty_vars[duty_idx] for duty_idx, duty in enumerate(duties) if service.serv_num in duty)== 1,
             name=f"Service_{service.serv_num}")
         service_constraints.append(constr)
 
@@ -500,7 +502,7 @@ def restricted_linear_program_for_heuristic(service_dict, duties, selected_vars,
         return objective.getValue(), duals, basis, selected_duties, selected_duties_vars
     else:
         print("No optimal solution found.")
-        return None, None, None, None
+        return None, None, None, None, None
 
 def generate_initial_feasible_duties_random_from_services(services, num_services, show_duties = False):
 
@@ -603,7 +605,7 @@ def generate_new_column(graph, service_dict, dual_values, method = "topological 
     else:
         raise NotImplementedError(f"Method {method} not implemented")
     
-def generate_new_column_2(graph, service_dict, dual_values, method = "topological sort", verbose = False, time_constr = 6*60):
+def generate_new_column_2(graph, service_dict, dual_values, method = "bf_duration_constr", verbose = False, time_constr = 6*60):
 
     
 
@@ -657,7 +659,73 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
             print("Path Duals: ",path_duals)
 
         return shortest_path[1:-1], longest_dist[-1]
-    
+    # //////////////////////////////////////////////////////////
+    elif method == "bf_duration_constr":
+       # Create a copy of the graph and adjust edge weights based on dual values.
+        graph_copy = graph.copy()
+        # sink_edge_weights = []
+        print("bf_duration_constr")
+        for u, v in graph_copy.edges():
+            # graph_copy[u][-1]['weight'] = 0
+            # service_idx_u = u
+            if u != -2:
+                dual_u = dual_values["Service_" + str(u)]
+                graph_copy[u][v]['weight'] = -(dual_u)
+            # if v == -1:
+            #     sink_edge_weights.append(graph_copy[u][v]['weight'])
+
+        # print("edge weights to sink",sink_edge_weights)
+        
+        # Initialize dictionaries for cost, cumulative duration, and predecessor pointers.
+        nodes = list(graph_copy.nodes())
+        INF = float('inf')
+        cost = {node: INF for node in nodes}
+        duration = {node: INF for node in nodes}
+        pred = {node: None for node in nodes}
+        
+        # The source node (-2) has cost 0 and duration 0.
+        cost[-2] = 0
+        duration[-2] = 0
+        
+        # Perform up to (|V| - 1) relaxations.
+        for _ in range(len(nodes) - 1):
+            updated = False
+            # For each edge, try to relax.
+            for u, v in graph_copy.edges():
+                # If u is reachable...
+                if cost[u] < INF:
+                    # Additional duration for node v: if v is a service node, add its service duration.
+                    add_dur = service_dict[u].serv_dur if u not in [-2, -1] else 0
+                    new_dur = duration[u] + add_dur
+                    # Only relax if the new cumulative duration is within allowed limit.
+                    if new_dur <= time_constr:
+                        new_cost = cost[u] + graph_copy[u][v]['weight']
+                        if new_cost < cost[v]:
+                            cost[v] = new_cost
+                            duration[v] = new_dur
+                            pred[v] = u
+                            updated = True
+            # No updates in this iteration means we can stop early.
+            if not updated:
+                break
+
+        # If the sink (-1) is unreachable within the duration constraint, return None.
+        if cost[-1] == INF:
+            return None, INF
+        # Reconstruct the path from sink (-1) back to source (-2) using predecessor pointers.
+        path = []
+        current = -1
+        while current is not None:
+            path.append(current)
+            current = pred[current]
+        path.reverse()
+        # Remove the source (-2) and sink (-1) from the reconstructed path.
+        if path and path[0] == -2:
+            path = path[1:]
+        if path and path[-1] == -1:
+            path = path[:-1]
+        cost_final = -cost[-1]
+        return path, cost_final
     elif method == "bellman ford":
         for u, v in graph.edges():
             if u == -2:
