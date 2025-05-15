@@ -605,7 +605,7 @@ def generate_new_column(graph, service_dict, dual_values, method = "topological 
     else:
         raise NotImplementedError(f"Method {method} not implemented")
     
-def generate_new_column_2(graph, service_dict, dual_values, method = "bf_duration_constr", verbose = False, time_constr = 6*60):
+def generate_new_column_2(graph, service_dict, dual_values, method = "topological sort", verbose = False, time_constr = 6*60):
 
     
 

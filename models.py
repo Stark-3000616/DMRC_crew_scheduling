@@ -523,29 +523,7 @@ def column_generation2(graph, service_dict, init_column_generator = "random", mp
                 print("Optimal solution found!")
                 break
 
-            if pricing_method == "bf_duration_constr" and reduced_cost <= 1:
-                print("Cannot find any more columns with negative reduced cost using bf duration constr!")
-                start_time_ip = time.time()
-                duty_1, reduced_cost_1 = generate_new_column_2(graph, service_dict, duals, method = "ip", verbose = verbose)
-                end_time_ip = time.time()
-                if reduced_cost_1 <=1:
-                    print("Optimal solution found!")
-                    break
-                elif duty_1 not in current_duties:
-                    if verbose:
-                        print("Unique Column found!")
-                        print(f"Column Generated through IP in:  {end_time_ip - start_time_ip:.6f} seconds")
-                        print("Generated duty Main:", duty, "Reduced cost Main (shortest path):", reduced_cost)
-                        duty_dur =0 
-                        for serv in duty:
-                            duty_dur += service_dict[serv].serv_dur
-                        print("Duty Duration: ", mins2hhmm(duty_dur))
-                    current_duties.append(duty_1)
-                else:
-                    print("Column from IP already in current duties")
-                    break
-                print("Optimal solution found!")
-                break
+            
             
             
             if pricing_method == "topological sort" and reduced_cost <= 1:
@@ -573,7 +551,29 @@ def column_generation2(graph, service_dict, init_column_generator = "random", mp
             if pricing_method in ["dp", "ip"] and reduced_cost <= 1:
                 print("Optimal solution found!")
                 break
-            
+            if pricing_method == "bf_duration_constr" and reduced_cost <= 1:
+                print("Cannot find any more columns with negative reduced cost using bf duration constr!")
+                start_time_ip = time.time()
+                duty_1, reduced_cost_1 = generate_new_column_2(graph, service_dict, duals, method = "ip", verbose = verbose)
+                end_time_ip = time.time()
+                if reduced_cost_1 <=1:
+                    print("Optimal solution found!")
+                    break
+                elif duty_1 not in current_duties:
+                    if verbose:
+                        print("Unique Column found!")
+                        print(f"Column Generated through IP in:  {end_time_ip - start_time_ip:.6f} seconds")
+                        print("Generated duty Main:", duty, "Reduced cost Main (shortest path):", reduced_cost)
+                        duty_dur =0 
+                        for serv in duty:
+                            duty_dur += service_dict[serv].serv_dur
+                        print("Duty Duration: ", mins2hhmm(duty_dur))
+                    current_duties.append(duty_1)
+                else:
+                    print("Column from IP already in current duties")
+                    break
+                print("Optimal solution found!")
+                break
             current_duties.append(duty)
             if verbose:
                 print("Current Duties: ", len(current_duties))
@@ -776,27 +776,6 @@ def column_generation4(graph, service_dict, current_duties, selected_vars, prici
             if pricing_method == "bellman ford" and reduced_cost >= 0:
                 print("Optimal solution found!")
                 break
-            if pricing_method == "bf_duration_constr" and reduced_cost <= 1:
-                print("Cannot find any more columns with negative reduced cost using bf duration constr!")
-                start_time_ip = time.time()
-                duty_1, reduced_cost_1 = generate_new_column_2(graph, service_dict, duals, method = "ip", verbose = verbose)
-                end_time_ip = time.time()
-                if reduced_cost_1 <=1:
-                    print("Optimal solution found!")
-                    break
-                elif duty_1 not in current_duties:
-                    if verbose:
-                        print("Unique Column found!")
-                        print(f"Column Generated through IP in:  {end_time_ip - start_time_ip:.6f} seconds")
-                        print("Generated duty Main:", duty, "Reduced cost Main (shortest path):", reduced_cost)
-                        duty_dur =0 
-                        for serv in duty:
-                            duty_dur += service_dict[serv].serv_dur
-                        print("Duty Duration: ", mins2hhmm(duty_dur))
-                    current_duties.append(duty_1)
-                else:
-                    print("Column from IP already in current duties")
-                    break
             if pricing_method == "topological sort" and reduced_cost <= 1:
                 print("Cannot find any more columns with negative reduced cost using topological sort!")
                 start_time_dp = time.time()
@@ -822,7 +801,27 @@ def column_generation4(graph, service_dict, current_duties, selected_vars, prici
             if pricing_method in ["dp", "ip"] and reduced_cost <= 1:
                 print("Optimal solution found!")
                 break
-            
+            if pricing_method == "bf_duration_constr" and reduced_cost <= 1:
+                print("Cannot find any more columns with negative reduced cost using bf duration constr!")
+                start_time_ip = time.time()
+                duty_1, reduced_cost_1 = generate_new_column_2(graph, service_dict, duals, method = "ip", verbose = verbose)
+                end_time_ip = time.time()
+                if reduced_cost_1 <=1:
+                    print("Optimal solution found!")
+                    break
+                elif duty_1 not in current_duties:
+                    if verbose:
+                        print("Unique Column found!")
+                        print(f"Column Generated through IP in:  {end_time_ip - start_time_ip:.6f} seconds")
+                        print("Generated duty Main:", duty, "Reduced cost Main (shortest path):", reduced_cost)
+                        duty_dur =0 
+                        for serv in duty:
+                            duty_dur += service_dict[serv].serv_dur
+                        print("Duty Duration: ", mins2hhmm(duty_dur))
+                    current_duties.append(duty_1)
+                else:
+                    print("Column from IP already in current duties")
+                    break
             current_duties.append(duty)
             if verbose:
                 print("Current Duties: ", len(current_duties))
@@ -887,7 +886,7 @@ def cg_heuristics(graph, service_dict, current_duties, threshold):
         print("Number of negative duals: ", negative_duals)
         print("Number of selected variables: ", len(selected_vars))
 
-        current_duties, final_duties, selected_duties, obj, basis = column_generation4(graph, service_dict, selected_vars=selected_vars, current_duties=current_duties, pricing_method = "bf_duration_constr", iterations = 1000, verbose = True)
+        current_duties, final_duties, selected_duties, obj, basis = column_generation4(graph, service_dict, selected_vars=selected_vars, current_duties=current_duties, pricing_method = "topological sort", iterations = 1000, verbose = True)
         print("Current Objective: ", obj)
 
         print("\n=================================================================\n")
