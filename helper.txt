@@ -95,7 +95,7 @@ def draw_graph_with_edges(graph, n=50):
 def node_legal(service1, service2):
     if service1.stepback_train_num == "No Stepback":
         if service2.train_num == service1.train_num:
-            if service1.end_stn == service2.start_stn and 0 <= (service2.start_time - service1.end_time) <= 30:
+            if service1.end_stn == service2.start_stn and 0 <= (service2.start_time - service1.end_time) <= 15:
                 return True
         else:
             if (service1.end_stn[:4] == service2.start_stn[:4]) and (service2.start_time >= service1.end_time + 30) and (service2.start_time <= service1.end_time + 150):
@@ -103,10 +103,10 @@ def node_legal(service1, service2):
         
     else:
         if service2.train_num == service1.stepback_train_num:
-            if (service1.end_stn == service2.start_stn) and 0 <= (service2.start_time - service1.end_time) <= 30:
+            if (service1.end_stn == service2.start_stn) and (service1.end_time == service2.start_time):
                 return True
         else:
-            if (service1.end_stn[:4] == service2.start_stn[:4]) and (service2.start_time >= service1.end_time + 30) and (service2.start_time <= service1.end_time + 150):
+            if (service1.end_stn[:4] == service2.start_stn[:4]) and (service2.start_time >= service1.end_time + 30 ) and (service2.start_time <= service1.end_time + 150):
                 return True
     return False
 
@@ -400,7 +400,7 @@ def restricted_linear_program(service_dict, duties, show_solutions = False, show
 
     if model.status == GRB.INFEASIBLE:
         print('Infeasible problem!')
-        return None, None, None, None, None
+        return None, None, None, None
     elif model.status == GRB.OPTIMAL:
         objective = model.getObjective()
         model.write("model.lp") 
@@ -541,7 +541,7 @@ def generate_initial_feasible_duties_random_from_services(services, num_services
         serv_num_duty.append(tt)
     if show_duties:
         print(serv_num_duty)
-    return serv_num_duty, len(serv_num_duty)
+    return serv_num_duty
 
 
 def generate_new_column(graph, service_dict, dual_values, method = "topological sort", verbose = False):
@@ -619,6 +619,8 @@ def generate_new_column(graph, service_dict, dual_values, method = "topological 
     
 def generate_new_column_2(graph, service_dict, dual_values, method = "topological sort", verbose = False, time_constr = 6*60):
 
+    
+
     if method == "topological sort":
 
         for u, v in graph.edges():
@@ -668,100 +670,7 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
 
             print("Path Duals: ",path_duals)
 
-        return shortest_path[1:-1], longest_dist[-1], None
-    
-    # //////////////////////////////////////////////////////////
-    elif method == "topo_w_constrs":
-        # Define break-eligible stations
-        cc1 = {"MKPR", "MKPR UP", "MKPR DN", "SAKP", "DDSC", "DDSC DN", "DDSC SDG", "PVGW", "PBGW", 
-            "PBGW UP", "PBGW DN", "PVGW UP", "PVGW DN", "MKPD", "MKPD ", "SAKP 3RD"}
-        cc2 = {"SVVR", "SVVR DN", "MUPR", "MUPR DN", "MUPR 4TH", "MUPR 3RD SDG", "KKDA DN", "KKDA UP", 
-            "IPE", "IPE 3RD", "VND", "MVPO", "MVPO DN", "NZM", "NIZM", "KKDA", "MUPR DN SDG"}
-        crew_control_stations = cc1.union(cc2)
-
-        # Set weights using dual values
-        for u, v in graph.edges():
-            if u == -2:
-                graph[u][v]['weight'] = 0
-            else:
-                graph[u][v]['weight'] = dual_values.get("Service_" + str(u), 0)
-
-        # Get topological order
-        topo_order = list(nx.topological_sort(graph))
-
-        # Initialize DP tables
-        longest_dist = {node: float('-inf') for node in graph.nodes}
-        longest_dist[-2] = 0
-        duration = {node: 0 for node in graph.nodes}
-        continuous_driving = {node: 0 for node in graph.nodes}
-        predecessor = {node: None for node in graph.nodes}
-        break_count = {node: 0 for node in graph.nodes}  # NEW: Track number of breaks used
-
-        # Topological relaxation
-        for u in topo_order:
-            for v in graph.successors(u):
-                weight = graph[u][v]['weight']
-                succ_serv = service_dict.get(v, None)
-                succ_dur = succ_serv.serv_dur if succ_serv else 0
-
-                if u not in [-2, -1] and v not in [-2, -1]:
-                    prev_serv = service_dict.get(u, None)
-                    if prev_serv is None:
-                        print("yahan chala gaya 1")
-                        continue
-
-                    gap = succ_serv.start_time - prev_serv.end_time
-                    if gap < 0:
-                        print("overlapping services skipped")
-                        continue  # Skip overlapping services
-
-                    added_duty_time = gap + succ_dur
-
-                    if duration[u] + added_duty_time > 420:
-                        continue
-
-                    break_possible = gap >= 30 and prev_serv.end_stn in crew_control_stations
-                    new_break_count = break_count[u] + 1 if break_possible else break_count[u]
-
-                    if new_break_count > 2:
-                        continue  # Exceeds 2 breaks, skip
-
-                    new_continuous = succ_dur if break_possible else continuous_driving[u] + added_duty_time
-
-                    if new_continuous > 60:
-                        continue
-                else:
-                    added_duty_time = 0
-                    new_continuous = 0
-                    new_break_count = 0
-
-                if longest_dist[v] < longest_dist[u] + weight:
-                    longest_dist[v] = longest_dist[u] + weight
-                    duration[v] = duration[u] + added_duty_time
-                    continuous_driving[v] = new_continuous
-                    predecessor[v] = u
-                    break_count[v] = new_break_count  # Track breaks used
-
-        # Reconstruct path
-        shortest_path = []
-        curr = -1
-        while curr is not None:
-            shortest_path.append(curr)
-            curr = predecessor[curr]
-        shortest_path.reverse()
-
-        # Verbose output
-        if verbose:
-            path_duals = []
-            for i in range(len(shortest_path) - 1):
-                path_duals.append(graph[shortest_path[i]][shortest_path[i + 1]]['weight'])
-            print("Path Duals: ", path_duals)
-
-        # Return the full duty (excluding source -2 and sink -1)
-        return shortest_path[1:-1], longest_dist[-1], None
-
-
-
+        return shortest_path[1:-1], longest_dist[-1]
     # //////////////////////////////////////////////////////////
     elif method == "bf_duration_constr":
        # Create a copy of the graph and adjust edge weights based on dual values.
@@ -814,7 +723,7 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
 
         # If the sink (-1) is unreachable within the duration constraint, return None.
         if cost[-1] == INF:
-            return None, INF, None
+            return None, INF
         # Reconstruct the path from sink (-1) back to source (-2) using predecessor pointers.
         path = []
         current = -1
@@ -828,7 +737,7 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
         if path and path[-1] == -1:
             path = path[:-1]
         cost_final = -cost[-1]
-        return path, cost_final, None
+        return path, cost_final
     # ////////////////////////////////////////////////////////////
     elif method == "label-setting":
             print("label-setting")
@@ -885,6 +794,12 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
                 
                 # Extend this finalized label to every successor v.
                 for v in graph.successors(u):
+                    # Compute transition time if both u and v are real service nodes.
+                    # trans_time = 0
+                    # if u not in [source, sink] and v not in [source, sink]:
+                    #     trans_time = max(0, service_dict[v].start_time - service_dict[u].end_time)
+                    # Compute additional resource: service duration at v.
+                    # add_dur = service_dict[v].serv_dur if v not in [source, sink] else 0
                     add_dur = service_dict[u].serv_dur if u not in [source, sink] else 0
                     new_duration = res_vec[0] +add_dur
                     # new_duration = res_vec[0] + trans_time + add_dur
@@ -948,139 +863,30 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
                     best_path = best_path[1:]
                 if best_path and best_path[-1] == -1:
                     best_path = best_path[:-1]
-                return best_path, best_cost, None
+                return best_path, best_cost
             else:
-                return None, None, None
+                return None, None   
+
+    elif method == "bellman ford":
+        for u, v in graph.edges():
+            if u == -2:
+                graph[u][v]['weight'] = 1
+            else:
+                # graph[u][v]['weight'] = -dual_values[u]
+                graph[u][v]['weight'] = -dual_values["Service_" + str(u)]
+
+        shortest_path = nx.shortest_path(graph, source=-2, target=-1, weight='weight', method = 'bellman-ford')
+        shortest_distance = nx.shortest_path_length(graph, source=-2, target=-1, weight='weight', method = 'bellman-ford')
+
+        if verbose:
+            path_duals = []
+            for i in range(len(shortest_path)-1):
+                path_duals.append(graph[shortest_path[i]][shortest_path[i+1]]['weight'])
+
+            print("Path Duals: ", path_duals)
+
+        return shortest_path[1:-1], shortest_distance
                         
-    elif method == "label-setting-duration-constr":
-        print("label-setting-with-duration-constr")
-        cc1 = {"MKPR", "MKPR UP", "MKPR DN", "SAKP", "DDSC", "DDSC DN", "DDSC SDG", "PVGW", "PBGW", 
-            "PBGW UP", "PBGW DN", "PVGW UP", "PVGW DN", "MKPD", "MKPD ", "SAKP 3RD"}
-        cc2 = {"SVVR", "SVVR DN", "MUPR", "MUPR DN", "MUPR 4TH", "MUPR 3RD SDG", "KKDA DN", "KKDA UP", 
-            "IPE", "IPE 3RD", "VND", "MVPO", "MVPO DN", "NZM", "NIZM", "KKDA", "MUPR DN SDG"}
-        crew_control_stations = cc1.union(cc2)
-        source = -2
-        sink = -1
-        time_constr = 480
-
-        # Set tail-weight on edges
-        for x, y in list(graph.edges()):
-            if x == source:
-                graph[x][y]['weight'] = 0
-            elif y == sink:
-                try:
-                    graph[x][y]['weight'] = service_dict[x].serv_dur
-                except KeyError:
-                    graph[x][y]['weight'] = 0
-            else:
-                try:
-                    graph[x][y]['weight'] = service_dict[x].serv_dur
-                except KeyError:
-                    graph[x][y]['weight'] = 0
-
-        # Backward resource estimates
-        try:
-            rev_graph = graph.reverse(copy=True)
-            g_comp_res = nx.single_source_dijkstra_path_length(rev_graph, sink, weight="weight")
-        except Exception as e:
-            print("Error computing g_comp_res:", e)
-            g_comp_res = {}
-
-        # Init label: (cost, (duration, continuous_drive, break_count), node, pred)
-        init_label = (0, (0, 0, 0), source, None)
-        tentative = {source: [init_label]}
-        permanent = {source: []}
-        heap = [init_label]
-
-        while heap:
-            label = heapq.heappop(heap)
-            cost, (curr_dur, curr_cont_drive, curr_breaks), u, pred = label
-
-            if u not in tentative or label not in tentative[u]:
-                continue
-
-            tentative[u].remove(label)
-            permanent.setdefault(u, []).append(label)
-
-            for v in graph.successors(u):
-                # Skip illegal services
-                if u not in [source, sink] and v not in [source, sink]:
-                    try:
-                        u_serv = service_dict[u]
-                        v_serv = service_dict[v]
-                    except:
-                        continue
-
-                    gap = v_serv.start_time - u_serv.end_time
-                    if gap < 0:
-                        continue  # overlap
-                    break_possible = gap >= 30 and u_serv.end_stn in crew_control_stations
-
-                    new_dur = curr_dur + gap + v_serv.serv_dur
-                    new_cont_drive = v_serv.serv_dur if break_possible else curr_cont_drive + gap + v_serv.serv_dur
-                    new_breaks = curr_breaks + 1 if break_possible else curr_breaks
-
-                    if new_dur > time_constr or new_cont_drive > 120 or new_breaks > 2:
-                        continue
-
-                else:
-                    new_dur = curr_dur
-                    new_cont_drive = 0
-                    new_breaks = curr_breaks
-
-                if v in g_comp_res and new_dur + g_comp_res[v] > time_constr:
-                    continue
-
-                new_res_vec = (new_dur, new_cont_drive, new_breaks)
-
-                # Cost update
-                if u != source:
-                    dual_u = dual_values.get("Service_" + str(u), 0)
-                    add_cost = -dual_u
-                else:
-                    add_cost = 0
-                new_cost = cost + add_cost
-
-                new_label = (new_cost, new_res_vec, v, label)
-
-                # Dominance check
-                dominated = False
-                non_dominated = []
-                for lab in tentative.get(v, []):
-                    if lab[0] <= new_cost and lab[1] <= new_res_vec:
-                        dominated = True
-                        break
-                    if not (new_cost <= lab[0] and new_res_vec < lab[1]):
-                        non_dominated.append(lab)
-                if dominated:
-                    continue
-
-                for lab in permanent.get(v, []):
-                    if lab[0] < new_cost or (lab[0] == new_cost and lab[1] <= new_res_vec):
-                        dominated = True
-                        break
-                if dominated:
-                    continue
-
-                tentative.setdefault(v, [])
-                tentative[v] = non_dominated + [new_label]
-                heapq.heappush(heap, new_label)
-
-        # Gather best label
-        sink_labels = tentative.get(sink, []) + permanent.get(sink, [])
-        if sink_labels:
-            best_label = min(sink_labels, key=lambda lab: (lab[0], lab[1]))
-            best_path = reconstruct_path(best_label)
-            best_cost = -best_label[0]
-
-            if best_path and best_path[0] == -2:
-                best_path = best_path[1:]
-            if best_path and best_path[-1] == -1:
-                best_path = best_path[:-1]
-            return best_path, best_cost, None
-        else:
-            return None, None, None
-        
 
     elif method == "dp":
 
@@ -1145,7 +951,7 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
         print("Shortest Path Length: ", spprc)
         print("Shortest Path: ", path)
 
-        return list(path)[:-1], spprc, None
+        return list(path)[:-1], spprc
 
     elif method == "ip":
         service_dict[-1] = Service([-1,-1, "x", "00:00", "x", "00:00","x",0, "x", "x"])
@@ -1160,7 +966,6 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
 
         model = gp.Model("SPPRC")
         model.setParam('OutputFlag', 0) 
-        model.setParam('TimeLimit', 90)
 
         incoming_var = defaultdict(list)
         outgoing_var = defaultdict(list) 
@@ -1213,11 +1018,6 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
         if model.status == GRB.INFEASIBLE:
             print ("Hehe!")
             print("Model is not feasible")
-        
-        if model.status == GRB.TIME_LIMIT:
-            print("Model is not feasible")
-            print("Time limit reached")
-            return None, None, model
         #extracting path
 
         reduced_cost = 0
@@ -1236,7 +1036,7 @@ def generate_new_column_2(graph, service_dict, dual_values, method = "topologica
         del service_dict[-1]
         del service_dict[-2]
 
-        return path[1:-1], reduced_cost, model
+        return path[1:-1], reduced_cost
         
     else:
         raise NotImplementedError(f"Method {method} not implemented")
