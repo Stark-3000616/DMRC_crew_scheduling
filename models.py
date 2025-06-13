@@ -2,6 +2,9 @@ import gurobipy as gp
 import time
 from gurobipy import GRB
 import networkx as nx
+import itertools
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
 from collections import defaultdict
 
 from helper import Service, hhmm2mins, mins2hhmm, fetch_data, draw_graph_with_edges, node_legal, no_overlap, create_duty_graph, extract_nodes, generate_paths, roster_statistics, get_bad_paths, get_lazy_constraints, generate_initial_feasible_duties_random_from_services, restricted_linear_program, generate_new_column, generate_new_column_2, restricted_linear_program_for_heuristic
@@ -818,3 +821,95 @@ def cg_heuristics(graph, service_dict, current_duties, threshold, n = 1, iterati
         print("\n=================================================================\n")
         i += 1
     return selected_vars, current_duties
+# parallel version of cg_heuristics
+def evaluate_pair(pair, selected_vars, graph, service_dict, pricing_method, current_duties, iterations, verbose):
+    trial_vars = selected_vars + list(pair)
+    duties, final_duties, sel_duties, obj, basis = column_generation4(
+        graph,
+        service_dict,
+        current_duties=current_duties,
+        selected_vars=trial_vars,
+        pricing_method=pricing_method,
+        iterations=iterations,
+        verbose=verbose
+    )
+    return pair, obj, (duties, final_duties, sel_duties, obj, basis)
+
+
+def cg_heuristics_parallel(graph, service_dict, pricing_method, current_duties, threshold, n=1, iterations=1000, verbose=False):
+    selected_vars = []
+    obj, duals, basis, selected_duties, selected_duties_vars = restricted_linear_program(
+        service_dict,
+        current_duties,
+        show_solutions=False,
+        show_objective=True
+    )
+    i = 0
+
+    while len(selected_vars) < len(service_dict):
+        # immediately check for empty basis
+        if not basis:
+            print("Basis is empty; terminating heuristic.")
+            break
+
+        # add by threshold
+        added_vars = False
+        for key, value in basis.items():
+            if value > threshold and key not in selected_vars:
+                selected_vars.append(key)
+                added_vars = True
+
+        if not added_vars:
+            # no threshold-based additions: evaluate top-4 pairs in parallel
+            sorted_basis = dict(sorted(basis.items(), key=lambda item: item[1], reverse=True))
+            top4 = list(sorted_basis.keys())[:4]
+
+            best_obj = float('inf')
+            best_result = None
+            with ProcessPoolExecutor(max_workers=4) as executor:
+                futures = {
+                    executor.submit(
+                        evaluate_pair,
+                        pair,
+                        list(selected_vars),
+                        graph,
+                        service_dict,
+                        pricing_method,
+                        current_duties,
+                        iterations,
+                        verbose
+                    ): pair
+                    for pair in itertools.combinations(top4, 2)
+                }
+                for fut in as_completed(futures):
+                    pair = futures[fut]
+                    pair, obj_val, state = fut.result()
+                    if obj_val < best_obj:
+                        best_obj = obj_val
+                        best_result = (pair, state)
+
+            best_pair, best_state = best_result
+            print(f"Adding best pair {best_pair} with obj {best_obj}")
+            selected_vars.extend(best_pair)
+            current_duties, final_duties, selected_duties, obj, basis = best_state
+
+        else:
+            # standard single-step update
+            start_time = time.time()
+            current_duties, final_duties, selected_duties, obj, basis = column_generation4(
+                graph,
+                service_dict,
+                current_duties=current_duties,
+                selected_vars=selected_vars,
+                pricing_method=pricing_method,
+                iterations=iterations,
+                verbose=verbose
+            )
+            print(f"Column Generated for iteration {i} in: {time.time() - start_time:.6f} seconds")
+
+        print(f"Current Objective: {obj}")
+        print("\n=================================================================\n")
+        i += 1
+
+    return selected_vars, current_duties
+

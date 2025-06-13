@@ -1,0 +1,180 @@
+Time limit: 10 seconds
+
+Roster Statistics:
+Number of duties:  900
+Maximum number of services in a duty:  2
+Minimum number of services in a duty:  0
+Maximum duration of duty:  02:21
+Minimum duration of duty:  00:03
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 20 seconds
+
+Roster Statistics:
+Number of duties:  900
+Maximum number of services in a duty:  2
+Minimum number of services in a duty:  0
+Maximum duration of duty:  02:21
+Minimum duration of duty:  00:03
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 30 seconds
+
+Roster Statistics:
+Number of duties:  187
+Maximum number of services in a duty:  20
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 40 seconds
+
+Roster Statistics:
+Number of duties:  187
+Maximum number of services in a duty:  20
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 50 seconds
+
+Roster Statistics:
+Number of duties:  186
+Maximum number of services in a duty:  20
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 60 seconds
+
+Roster Statistics:
+Number of duties:  186
+Maximum number of services in a duty:  20
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 120 seconds
+
+Roster Statistics:
+Number of duties:  145
+Maximum number of services in a duty:  19
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 180 seconds
+
+Roster Statistics:
+Number of duties:  144
+Maximum number of services in a duty:  19
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 240 seconds
+
+Roster Statistics:
+Number of duties:  144
+Maximum number of services in a duty:  19
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 300 seconds
+
+Roster Statistics:
+Number of duties:  144
+Maximum number of services in a duty:  19
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 600 seconds
+
+Roster Statistics:
+Number of duties:  140
+Maximum number of services in a duty:  18
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 900 seconds
+
+Roster Statistics:
+Number of duties:  140
+Maximum number of services in a duty:  18
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 1200 seconds
+
+Roster Statistics:
+Number of duties:  140
+Maximum number of services in a duty:  18
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 1500 seconds
+
+Roster Statistics:
+Number of duties:  140
+Maximum number of services in a duty:  18
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------
+Time limit: 1800 seconds
+
+Roster Statistics:
+Number of duties:  140
+Maximum number of services in a duty:  18
+Minimum number of services in a duty:  0
+Maximum duration of duty:  06:00
+Minimum duration of duty:  00:20
+Duties with driving time more than 6hrs:  0
+Duties with driving time more than 8hrs:  0
+
+----------------------------------------

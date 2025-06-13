@@ -418,7 +418,7 @@ def restricted_linear_program(service_dict, duties, show_solutions = False, show
             for variable in selected_duties_vars:
                 print(variable.varName, variable.x)
         if show_objective:    
-            print(f"Objective Value: {objective.getValue()}")
+            print(f"Objective Value from rmlp: {objective.getValue()}")
 
         return objective.getValue(), duals, basis, selected_duties, selected_duties_vars
     else:
@@ -495,7 +495,7 @@ def restricted_linear_program_for_heuristic(service_dict, duties, selected_vars,
             for variable in selected_duties_vars:
                 print(variable.varName, variable.x)
         if show_objective:    
-            print(f"Objective Value: {objective.getValue()}")
+            print(f"Objective Value from rmlpheur: {objective.getValue()}")
 
         return objective.getValue(), duals, basis, selected_duties, selected_duties_vars
     else:
